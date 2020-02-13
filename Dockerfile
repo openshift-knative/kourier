@@ -1,13 +1,9 @@
-FROM golang:1.13
+FROM openshift/origin-release:golang-1.13 AS builder
 WORKDIR /app/
-COPY go.mod go.sum ./
-RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o kourier cmd/kourier/main.go
+ENV GOFLAGS="-mod=vendor"
+RUN go build -o /tmp/kourier ./cmd/kourier
 
-FROM alpine:latest
-RUN apk --no-cache add ca-certificates
-USER 1001
-COPY --from=0 /app/kourier /app/kourier
-EXPOSE 18000 19000
-ENTRYPOINT ["/app/kourier"]
+FROM openshift/origin-base
+COPY --from=builder /tmp/kourier /ko-app/kourier
+ENTRYPOINT ["/ko-app/kourier"]
