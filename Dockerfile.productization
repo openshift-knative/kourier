@@ -1,0 +1,19 @@
+FROM registry-proxy.engineering.redhat.com/rh-osbs/rhel8-go-toolset:1.13.4 AS builder
+WORKDIR /app/
+COPY . .
+ENV GOFLAGS="-mod=vendor"
+RUN go build -o /tmp/kourier ./cmd/kourier
+
+FROM registry-proxy.engineering.redhat.com/rh-osbs/ubi8-minimal:8-released
+COPY --from=builder /tmp/kourier /ko-app/kourier
+
+LABEL \
+      com.redhat.component="openshift-serverless-1-tech-preview-kourier-control-rhel8-container" \
+      name="openshift-serverless-1-tech-preview/kourier-control-rhel8" \
+      version="v0.12.0" \
+      summary="Red Hat OpenShift Serverless 1 Kourier Control Plane" \
+      maintainer="serverless-support@redhat.com" \
+      description="Red Hat OpenShift Serverless 1 Kourier Control Plane" \
+      io.k8s.display-name="Red Hat OpenShift Serverless 1 Kourier Control Plane"
+
+ENTRYPOINT ["/ko-app/kourier"]
