@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"kourier/pkg/envoy"
 	"kourier/pkg/knative"
-	"strconv"
 	"time"
 
 	endpoint "github.com/envoyproxy/go-control-plane/envoy/api/v2/endpoint"
@@ -75,10 +74,10 @@ func newTranslatedIngress(ingressName string, ingressNamespace string) translate
 	}
 }
 
-func (translator *IngressTranslator) translateIngress(ingress *v1alpha1.Ingress, index int, extAuthzEnabled bool) (*translatedIngress, error) {
+func (translator *IngressTranslator) translateIngress(ingress *v1alpha1.Ingress, extAuthzEnabled bool) (*translatedIngress, error) {
 	res := newTranslatedIngress(ingress.Name, ingress.Namespace)
 
-	for _, ingressTLS := range ingress.GetSpec().TLS {
+	for _, ingressTLS := range ingress.Spec.TLS {
 		sniMatch, err := sniMatchFromIngressTLS(ingressTLS, translator.kubeclient)
 
 		if err != nil {
@@ -96,7 +95,7 @@ func (translator *IngressTranslator) translateIngress(ingress *v1alpha1.Ingress,
 		res.sniMatches = append(res.sniMatches, sniMatch)
 	}
 
-	for _, rule := range ingress.GetSpec().Rules {
+	for _, rule := range ingress.Spec.Rules {
 
 		var ruleRoute []*route.Route
 
@@ -167,7 +166,7 @@ func (translator *IngressTranslator) translateIngress(ingress *v1alpha1.Ingress,
 			}
 
 			if len(wrs) != 0 {
-				r := createRouteForRevision(ingress.Name, index, httpPath, wrs)
+				r := createRouteForRevision(ingress.Name, ingress.Namespace, httpPath, wrs)
 				ruleRoute = append(ruleRoute, r)
 				res.routes = append(res.routes, r)
 			}
@@ -189,7 +188,7 @@ func (translator *IngressTranslator) translateIngress(ingress *v1alpha1.Ingress,
 		var virtualHost, internalVirtualHost route.VirtualHost
 		if extAuthzEnabled {
 
-			visibility := ingress.GetSpec().Visibility
+			visibility := ingress.Spec.Visibility
 			if visibility == "" { // Needed because visibility is optional
 				visibility = v1alpha1.IngressVisibilityClusterLocal
 			}
@@ -209,7 +208,7 @@ func (translator *IngressTranslator) translateIngress(ingress *v1alpha1.Ingress,
 			internalVirtualHost = envoy.NewVirtualHost(ingress.GetName(), internalDomains, ruleRoute)
 		}
 
-		if knative.RuleIsExternal(rule, ingress.GetSpec().Visibility) {
+		if knative.RuleIsExternal(rule, ingress.Spec.Visibility) {
 			res.externalVirtualHosts = append(res.externalVirtualHosts, &virtualHost)
 		}
 
@@ -230,8 +229,8 @@ func lbEndpointsForKubeEndpoints(kubeEndpoints *kubev1.Endpoints, targetPort int
 	return publicLbEndpoints
 }
 
-func createRouteForRevision(routeName string, i int, httpPath v1alpha1.HTTPIngressPath, wrs []*route.WeightedCluster_ClusterWeight) *route.Route {
-	name := routeName + "_" + strconv.Itoa(i)
+func createRouteForRevision(ingressName string, ingressNamespace string, httpPath v1alpha1.HTTPIngressPath, wrs []*route.WeightedCluster_ClusterWeight) *route.Route {
+	routeName := ingressName + "_" + ingressNamespace + "_" + httpPath.Path
 
 	path := "/"
 	if httpPath.Path != "" {
@@ -254,7 +253,7 @@ func createRouteForRevision(routeName string, i int, httpPath v1alpha1.HTTPIngre
 	}
 
 	return envoy.NewRoute(
-		name, path, wrs, routeTimeout, uint32(attempts), perTryTimeout, httpPath.AppendHeaders,
+		routeName, path, wrs, routeTimeout, uint32(attempts), perTryTimeout, httpPath.AppendHeaders,
 	)
 }
 
